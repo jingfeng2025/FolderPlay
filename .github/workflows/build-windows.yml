@@ -15,16 +15,33 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install system dependencies (GTK4 & GStreamer)
+      - name: Install libadwaita >= 1.6 from source
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends software-properties-common
-          sudo add-apt-repository -y "deb http://azure.archive.ubuntu.com/ubuntu noble-backports main universe"
-          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            meson \
+            ninja-build \
+            valac \
+            libgtk-4-dev \
+            libgraphene-1.0-dev \
+            libpango1.0-dev \
+            libglib2.0-dev \
+            gettext
           
-          sudo apt-get install -y --no-install-recommends -t noble-backports \
-            libadwaita-1-dev
+          git clone --depth 1 --branch 1.6.0 https://gitlab.gnome.org/GNOME/libadwaita.git
+          cd libadwaita
           
+          meson setup _build --prefix=/usr --libdir=/usr/lib/x86_64-linux-gnu
+          ninja -C _build
+          sudo ninja -C _build install
+          
+          sudo ldconfig
+          cd ..
+          
+          pkg-config --modversion libadwaita-1
+
+      - name: Install other system dependencies
+        run: |
           sudo apt-get install -y --no-install-recommends \
             gcc-mingw-w64-x86-64 \
             pkg-config \

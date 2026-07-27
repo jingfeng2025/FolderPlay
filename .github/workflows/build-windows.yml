@@ -1,60 +1,58 @@
 name: Build Windows Executable
 
 on:
-  # 当向 main 或 master 分支推送代码时触发
-  push:
-    branches: [ main, master ]
-  # 允许你手动在 Actions 页面触发编译
-  workflow_dispatch:
+  workflow_dispatch:  # 保留手动触发
 
 env:
   CARGO_TERM_COLOR: always
-  # 指定 Windows 目标
   TARGET: x86_64-pc-windows-gnu
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Install system dependencies (GTK4 and cross-compile tools)
-      run: |
-        sudo apt-get update
-        # 安装 Windows 交叉编译工具链和 GTK4 开发库
-        sudo apt-get install -y \
-          gcc-mingw-w64-x86-64 \
-          pkg-config \
-          libgtk-4-dev \
-          libpango1.0-dev \
-          libgraphene-1.0-dev \
-          libadwaita-1-dev
-        # 设置环境变量，帮助 pkg-config 找到交叉编译的库（如果需要）
-        echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+      # 关键修复：更彻底地安装GTK4及其交叉编译依赖
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-mingw-w64-x86-64 \
+            pkg-config \
+            libgtk-4-dev \
+            libpango1.0-dev \
+            libgraphene-1.0-dev \
+            libadwaita-1-dev \
+            librsvg2-dev  # FolderPlay可能需要的SVG渲染库
+          
+          # 设置环境变量，帮助pkg-config找到库路径
+          echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+          # 为交叉编译设置正确的环境变量
+          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
 
-    - name: Setup Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: ${{ env.TARGET }}
-        override: true
+      # 修复：使用更现代的dtolnay/rust-toolchain，避免actions-rs的警告
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.TARGET }}
 
-    # 使用 cross 或者直接 cargo 编译，这里直接使用 cargo 并指定链接器
-    - name: Build for Windows
-      run: |
-        # 创建 .cargo/config.toml 来指定链接器，避免 cross 的镜像依赖
-        mkdir -p .cargo
-        echo "[target.x86_64-pc-windows-gnu]" > .cargo/config.toml
-        echo "linker = 'x86_64-w64-mingw32-gcc'" >> .cargo/config.toml
-        
-        # 执行编译
-        cargo build --target ${{ env.TARGET }} --release
-        
-    - name: Upload Windows executable
-      uses: actions/upload-artifact@v4
-      with:
-        name: FolderPlay-Windows-x64
-        path: target/x86_64-pc-windows-gnu/release/FolderPlay.exe
-        # 如果有多个 exe，可以调整路径，但通常主程序名与项目名一致
+      - name: Configure Cargo for cross-compilation
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml << EOF
+          [target.x86_64-pc-windows-gnu]
+          linker = "x86_64-w64-mingw32-gcc"
+          EOF
+
+      # 尝试编译，并输出更详细的错误信息
+      - name: Build for Windows
+        run: |
+          cargo build --target ${{ env.TARGET }} --release --verbose
+
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: FolderPlay-Windows-x64
+          path: target/x86_64-pc-windows-gnu/release/FolderPlay.exe

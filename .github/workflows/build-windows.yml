@@ -1,82 +1,48 @@
-name: Build Windows Executable
+name: Build Windows Release
 
 on:
+  push:
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
-env:
-  CARGO_TERM_COLOR: always
-  TARGET: x86_64-pc-windows-gnu
-
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    container: ubuntu:24.10
+  build-windows:
+    runs-on: windows-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install libadwaita >= 1.6 from source
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            meson \
-            ninja-build \
-            valac \
-            libgtk-4-dev \
-            libgraphene-1.0-dev \
-            libpango1.0-dev \
-            libglib2.0-dev \
-            gettext
-          
-          git clone --depth 1 --branch 1.6.0 https://gitlab.gnome.org/GNOME/libadwaita.git
-          cd libadwaita
-          
-          meson setup _build --prefix=/usr --libdir=/usr/lib/x86_64-linux-gnu
-          ninja -C _build
-          sudo ninja -C _build install
-          
-          sudo ldconfig
-          cd ..
-          
-          pkg-config --modversion libadwaita-1
-
-      - name: Install other system dependencies
-        run: |
-          sudo apt-get install -y --no-install-recommends \
-            gcc-mingw-w64-x86-64 \
-            pkg-config \
-            libgtk-4-dev \
-            libpango1.0-dev \
-            libgraphene-1.0-dev \
-            librsvg2-dev \
-            libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev \
-            gstreamer1.0-plugins-good \
-            gstreamer1.0-plugins-bad \
-            gstreamer1.0-plugins-ugly
-          
-          echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
-          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
         with:
-          targets: ${{ env.TARGET }}
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-gtk4
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-rust
+      
 
-      - name: Configure Cargo for cross-compilation
+      - name: Build with Cargo
+        shell: msys2 {0}
         run: |
-          mkdir -p .cargo
-          cat > .cargo/config.toml << EOF
-          [target.x86_64-pc-windows-gnu]
-          linker = "x86_64-w64-mingw32-gcc"
-          EOF
+          cargo build --release
 
-      - name: Build for Windows
+      - name: Prepare Artifacts
+        shell: msys2 {0}
         run: |
-          cargo build --target ${{ env.TARGET }} --release --verbose
+          mkdir dist
+          cp target/release/FolderPlay.exe dist/
+          cp /mingw64/bin/libgtk-4-1.dll dist/ 2>/dev/null || true
+          cp /mingw64/bin/libgio-2.0-0.dll dist/ 2>/dev/null || true
+          cp /mingw64/bin/libgobject-2.0-0.dll dist/ 2>/dev/null || true
+          cp /mingw64/bin/libglib-2.0-0.dll dist/ 2>/dev/null || true
 
-      - name: Upload Windows executable
+      - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: FolderPlay-Windows-x64
-          path: target/x86_64-pc-windows-gnu/release/FolderPlay.exe
+          path: dist/
